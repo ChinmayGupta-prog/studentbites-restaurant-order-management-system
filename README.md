@@ -15,6 +15,7 @@ StudentBites is a server-rendered restaurant ordering application aimed at campu
 | Build | Maven |
 | Testing | JUnit 5, Spring Boot Test, MockMvc, AssertJ |
 | Frontend | HTML, CSS, vanilla JavaScript |
+| Password security | Spring Security Crypto, BCrypt with cost factor 12 |
 
 ## Implemented features
 
@@ -127,8 +128,8 @@ The application reads its connection settings from environment variables and use
 
 ```powershell
 $env:DB_URL = "jdbc:mysql://localhost:3306/studentbites?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
-$env:DB_USER = "root"
-$env:DB_PASSWORD = "root"
+$env:DB_USER = "your_mysql_username"
+$env:DB_PASSWORD = "your_mysql_password"
 mvn spring-boot:run
 ```
 
@@ -173,7 +174,7 @@ The H2 profile makes the project runnable without infrastructure and uses MySQL 
 
 ## Current limitations
 
-- Authentication is custom session logic rather than Spring Security.
+- Authentication uses custom session handling. Spring Security Crypto provides BCrypt password hashing; the full Spring Security authentication framework is not configured.
 - New passwords use Spring Security Crypto's BCrypt encoder with a random salt and cost factor 12. Existing SHA-256 and PBKDF2 hashes upgrade after successful login. Passwords are limited to 72 UTF-8 bytes for BCrypt; longer legacy passwords remain usable with their existing hash to avoid truncation. Login/signup rotate the session ID, and logout invalidates the session and its carts.
 - There are no roles, admin dashboard, or kitchen workflow. Invoice and order-ID lookup require the owning account.
 - Payment is simulated; no payment gateway or transaction verification exists.
