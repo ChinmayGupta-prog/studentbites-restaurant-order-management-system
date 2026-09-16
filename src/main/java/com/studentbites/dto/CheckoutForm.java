@@ -2,6 +2,7 @@ package com.studentbites.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 
 public class CheckoutForm {
     @NotBlank
@@ -14,7 +15,11 @@ public class CheckoutForm {
     private String phone;
 
     private String hostelOrClass;
+    @NotBlank
+    @Pattern(regexp = "Pickup|Dine-in|Hostel delivery", message = "Choose a valid order mode")
     private String orderMode = "Pickup";
+    @NotBlank
+    @Pattern(regexp = "UPI|Card|Cash|Meal Pass", message = "Choose a valid payment mode")
     private String paymentMode = "UPI";
 
     public String getStudentName() {

@@ -5,6 +5,7 @@
 <nav th:replace="~{fragments/layout :: navbar}"></nav>
 <aside th:replace="~{fragments/layout :: cartDrawer}"></aside>
 <nav th:replace="~{fragments/layout :: mobileBottomNav}"></nav>
+<div th:replace="~{fragments/layout :: toast}"></div>
 
 <main class="page-shell two-column">
     <section>
@@ -25,7 +26,7 @@
                 </div>
                 <form th:action="@{/cart/update}" method="post" class="qty-form">
                     <input type="hidden" name="itemId" th:value="${cartItem.foodItem.id}">
-                    <input type="number" min="0" name="quantity" th:value="${cartItem.quantity}" aria-label="Quantity">
+                    <input type="number" min="0" max="99" name="quantity" th:value="${cartItem.quantity}" aria-label="Quantity">
                     <button class="icon-btn" type="submit"><span class="material-symbols-rounded">sync</span></button>
                 </form>
             </article>
@@ -58,6 +59,9 @@
         <div class="bill-line"><span>Subtotal</span><b th:text="'Rs. ' + ${cartTotal}">Rs. 0</b></div>
         <div class="bill-line"><span>Student discount</span><b>Included</b></div>
         <form th:action="@{/checkout}" th:object="${checkoutForm}" method="post" class="form-grid">
+            <div th:if="${#fields.hasAnyErrors()}" role="alert">
+                <p th:each="error : ${#fields.allErrors()}" th:text="${error}"></p>
+            </div>
             <input th:field="*{studentName}" placeholder="Student name" required th:readonly="${currentUserName != null}">
             <input th:field="*{email}" type="email" placeholder="Email" th:readonly="${currentUserName != null}">
             <input th:field="*{phone}" placeholder="Phone" required th:readonly="${currentUserName != null}">

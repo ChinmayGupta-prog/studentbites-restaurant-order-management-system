@@ -23,11 +23,15 @@ public class OrderTrackingController {
     public String track(@RequestParam(required = false) Long orderId,
                         Model model,
                         HttpSession session) {
+        if (!authService.loggedIn(session)) {
+            return "redirect:/login";
+        }
         if (orderId != null) {
-            orderService.findByIdWithLiveStatus(orderId).ifPresent(order -> {
+            orderService.findByIdWithLiveStatus(orderId,
+                    (String) session.getAttribute(AuthService.USER_EMAIL)).ifPresentOrElse(order -> {
                 model.addAttribute("trackedOrder", order);
                 model.addAttribute("autoRefresh", order.getStatus() != OrderStatus.DELIVERED);
-            });
+            }, () -> model.addAttribute("toast", "Order not found"));
         }
         if (authService.loggedIn(session)) {
             model.addAttribute("myOrders", orderService.latestForStudent(

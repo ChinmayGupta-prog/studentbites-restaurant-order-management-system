@@ -5,6 +5,8 @@ import com.studentbites.model.FoodItem;
 import com.studentbites.repository.FoodItemRepository;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
@@ -13,6 +15,7 @@ import java.util.Map;
 
 @Service
 public class CartService {
+    public static final int MAX_QUANTITY = 99;
     private static final String GUEST_CART_KEY = "cart:guest";
     private static final String USER_CART_PREFIX = "cart:user:";
     private final FoodItemRepository foodItems;
@@ -23,13 +26,23 @@ public class CartService {
 
     public void add(Long itemId, HttpSession session) {
         if (!foodItems.existsById(itemId)) {
-            return;
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Menu item not found");
         }
         Map<Long, Integer> cart = getCart(session);
-        cart.put(itemId, cart.getOrDefault(itemId, 0) + 1);
+        int current = cart.getOrDefault(itemId, 0);
+        if (current < 0 || current >= MAX_QUANTITY) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Maximum quantity is " + MAX_QUANTITY);
+        }
+        cart.put(itemId, current + 1);
     }
 
     public void update(Long itemId, int quantity, HttpSession session) {
+        if (quantity < 0 || quantity > MAX_QUANTITY) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantity must be between 0 and " + MAX_QUANTITY);
+        }
+        if (!foodItems.existsById(itemId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Menu item not found");
+        }
         Map<Long, Integer> cart = getCart(session);
         if (quantity <= 0) {
             cart.remove(itemId);

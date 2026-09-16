@@ -24,6 +24,7 @@
                     <span class="material-symbols-rounded">visibility</span>
                 </button>
             </div>
+            <small class="field-error" th:if="${#fields.hasErrors('passwordLengthValid')}" th:errors="*{passwordLengthValid}" role="alert">Password length error</small>
             <button class="btn primary full" type="submit">
                 <span class="material-symbols-rounded">person_add</span>
                 Sign Up

@@ -5,6 +5,7 @@ import com.studentbites.dto.SignupForm;
 import com.studentbites.service.AuthService;
 import com.studentbites.service.CartService;
 import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Controller;
@@ -36,6 +37,7 @@ public class AuthController {
     @PostMapping("/login")
     public String login(@Valid @ModelAttribute LoginForm loginForm,
                         BindingResult result,
+                        HttpServletRequest request,
                         HttpSession session,
                         RedirectAttributes redirectAttributes) {
         if (result.hasErrors()) {
@@ -43,6 +45,7 @@ public class AuthController {
         }
         return authService.login(loginForm.getEmail(), loginForm.getPassword())
                 .map(user -> {
+                    request.changeSessionId();
                     cartService.clearGuestCart(session);
                     authService.remember(user, session);
                     redirectAttributes.addFlashAttribute("toast", "Welcome, " + user.getFullName());
@@ -65,6 +68,7 @@ public class AuthController {
     @PostMapping("/signup")
     public String signup(@Valid @ModelAttribute SignupForm signupForm,
                          BindingResult result,
+                         HttpServletRequest request,
                          HttpSession session,
                          RedirectAttributes redirectAttributes) {
         if (authService.emailExists(signupForm.getEmail())) {
@@ -77,6 +81,7 @@ public class AuthController {
         if (result.hasErrors()) {
             return "signup";
         }
+        request.changeSessionId();
         cartService.clearGuestCart(session);
         authService.remember(user, session);
         redirectAttributes.addFlashAttribute("toast", "Account created. You can now order and track your food.");

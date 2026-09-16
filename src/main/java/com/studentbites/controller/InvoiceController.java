@@ -2,6 +2,8 @@ package com.studentbites.controller;
 
 import com.studentbites.model.OrderStatus;
 import com.studentbites.service.OrderService;
+import com.studentbites.service.AuthService;
+import jakarta.servlet.http.HttpSession;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,8 +19,12 @@ public class InvoiceController {
     }
 
     @GetMapping("/invoice/{id}")
-    public String invoice(@PathVariable Long id, Model model, RedirectAttributes redirectAttributes) {
-        return orderService.findByIdWithLiveStatus(id)
+    public String invoice(@PathVariable Long id, Model model, RedirectAttributes redirectAttributes, HttpSession session) {
+        String email = (String) session.getAttribute(AuthService.USER_EMAIL);
+        if (email == null) {
+            return "redirect:/login";
+        }
+        return orderService.findByIdWithLiveStatus(id, email)
                 .map(order -> {
                     model.addAttribute("order", order);
                     model.addAttribute("statuses", OrderStatus.values());

@@ -5,6 +5,8 @@ import com.studentbites.model.AppUser;
 import com.studentbites.repository.AppUserRepository;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.stereotype.Service;
+import org.springframework.security.crypto.password.Pbkdf2PasswordEncoder;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -21,6 +23,8 @@ public class AuthService {
     public static final String USER_HOSTEL = "currentUserHostel";
 
     private final AppUserRepository users;
+    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder(12);
+    private final Pbkdf2PasswordEncoder legacyPbkdf2 = Pbkdf2PasswordEncoder.defaultsForSpringSecurity_v5_8();
 
     public AuthService(AppUserRepository users) {
         this.users = users;
@@ -60,14 +64,17 @@ public class AuthService {
     }
 
     public void logout(HttpSession session) {
-        session.removeAttribute(USER_ID);
-        session.removeAttribute(USER_NAME);
-        session.removeAttribute(USER_EMAIL);
-        session.removeAttribute(USER_PHONE);
-        session.removeAttribute(USER_HOSTEL);
+        session.invalidate();
     }
 
     public String hash(String password) {
+        if (password.getBytes(StandardCharsets.UTF_8).length > 72) {
+            throw new IllegalArgumentException("Password must be at most 72 UTF-8 bytes");
+        }
+        return "{bcrypt}" + passwordEncoder.encode(password);
+    }
+
+    private String legacyHash(String password) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] encoded = digest.digest(("studentbites:" + password).getBytes(StandardCharsets.UTF_8));
@@ -83,7 +90,23 @@ public class AuthService {
 
     private boolean passwordMatches(AppUser user, String rawPassword, String trimmedPassword) {
         String savedHash = user.getPasswordHash();
-        return savedHash.equals(hash(rawPassword)) || savedHash.equals(hash(trimmedPassword));
+        if (savedHash.startsWith("{bcrypt}")) {
+            return trimmedPassword.getBytes(StandardCharsets.UTF_8).length <= 72
+                    && passwordEncoder.matches(trimmedPassword, savedHash.substring(8));
+        }
+        // Upgrade existing accounts only after successfully verifying their old password.
+        boolean matches = savedHash.startsWith("{pbkdf2}")
+                ? legacyPbkdf2.matches(trimmedPassword, savedHash.substring(8))
+                : savedHash.equals(legacyHash(rawPassword)) || savedHash.equals(legacyHash(trimmedPassword));
+        if (matches) {
+            // Keep long legacy passwords usable without silently truncating them for BCrypt.
+            if (trimmedPassword.getBytes(StandardCharsets.UTF_8).length <= 72) {
+                user.setPasswordHash(hash(trimmedPassword));
+                users.save(user);
+            }
+            return true;
+        }
+        return false;
     }
 
     private String normalizeEmail(String email) {

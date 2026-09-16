@@ -2,6 +2,8 @@ package com.studentbites.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.AssertTrue;
+import java.nio.charset.StandardCharsets;
 
 public class SignupForm {
     @NotBlank
@@ -18,6 +20,11 @@ public class SignupForm {
 
     @NotBlank
     private String password;
+
+    @AssertTrue(message = "Password must be at most 72 UTF-8 bytes")
+    public boolean isPasswordLengthValid() {
+        return password == null || password.getBytes(StandardCharsets.UTF_8).length <= 72;
+    }
 
     public String getFullName() {
         return fullName;

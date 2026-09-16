@@ -48,6 +48,112 @@ class StudentBitesFlowTests {
     @Autowired
     private OrderService orderService;
 
+    @Autowired
+    private AuthService authService;
+
+    private MockHttpSession studentSession(String email) {
+        MockHttpSession session = new MockHttpSession();
+        session.setAttribute(AuthService.USER_EMAIL, email);
+        session.setAttribute(AuthService.USER_NAME, "Private Student");
+        session.setAttribute(AuthService.USER_PHONE, "5555555555");
+        return session;
+    }
+
+    @Test
+    void invoicesAndTrackingRequireTheOrderOwner() throws Exception {
+        MockHttpSession owner = studentSession("private@example.com");
+        cartService.add(1L, owner);
+        String invoice = mockMvc.perform(post("/checkout").session(owner)
+                        .param("studentName", "Private Student").param("phone", "5555555555"))
+                .andExpect(status().is3xxRedirection()).andReturn().getResponse().getRedirectedUrl();
+        String id = invoice.substring(invoice.lastIndexOf('/') + 1);
+        mockMvc.perform(get(invoice)).andExpect(redirectedUrl("/login"));
+        mockMvc.perform(get("/track").param("orderId", id)).andExpect(redirectedUrl("/login"));
+        MockHttpSession stranger = studentSession("stranger@example.com");
+        mockMvc.perform(get(invoice).session(stranger)).andExpect(redirectedUrl("/menu"));
+        mockMvc.perform(get("/track").param("orderId", id).session(stranger))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.model().attributeDoesNotExist("trackedOrder"));
+        mockMvc.perform(get(invoice).session(owner)).andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("private@example.com")));
+        mockMvc.perform(get("/track").param("orderId", id).session(owner))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.model().attributeExists("trackedOrder"));
+    }
+
+    @Test
+    void cartRejectsOverflowAndUnknownItemsAndSupportsRemoval() throws Exception {
+        MockHttpSession session = new MockHttpSession();
+        cartService.add(1L, session);
+        for (String quantity : new String[]{"2147483647", "-1", "100", "2147483648"}) {
+            mockMvc.perform(post("/cart/update").session(session).param("itemId", "1").param("quantity", quantity))
+                    .andExpect(status().isBadRequest());
+        }
+        assertThat(cartService.count(session)).isEqualTo(1);
+        cartService.update(1L, 99, session);
+        mockMvc.perform(post("/cart/add/1").session(session)).andExpect(status().isBadRequest());
+        assertThat(cartService.count(session)).isEqualTo(99);
+        mockMvc.perform(post("/cart/update").session(session).param("itemId", "999999").param("quantity", "1"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/cart/update").session(session).param("itemId", "1").param("quantity", "0"))
+                .andExpect(status().is3xxRedirection());
+        assertThat(cartService.count(session)).isZero();
+    }
+
+    @Test
+    void invalidCheckoutModesDoNotSaveOrdersOrClearCart() throws Exception {
+        MockHttpSession session = studentSession("invalid-modes@example.com");
+        cartService.add(1L, session);
+        for (String[] modes : new String[][]{{"INVALID", "UPI"}, {"Pickup", "INVALID"}, {"", "Cash"}, {"Pickup", ""}}) {
+            mockMvc.perform(post("/checkout").session(session)
+                            .param("studentName", "Private Student").param("phone", "5555555555")
+                            .param("orderMode", modes[0]).param("paymentMode", modes[1]))
+                    .andExpect(status().isOk())
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.model().attributeHasErrors("checkoutForm"));
+        }
+        assertThat(orders.findTop8ByEmailIgnoreCaseOrderByCreatedAtDesc("invalid-modes@example.com")).isEmpty();
+        assertThat(cartService.count(session)).isEqualTo(1);
+    }
+
+    @Test
+    void orderServiceRejectsNegativeCartLines() {
+        MockHttpSession session = new MockHttpSession();
+        cartService.add(1L, session);
+        var items = cartService.items(session);
+        items.get(0).setQuantity(Integer.MIN_VALUE);
+        long before = orders.count();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                orderService.placeOrder(new com.studentbites.dto.CheckoutForm(), items))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        assertThat(orders.count()).isEqualTo(before);
+    }
+
+    @Test
+    void authenticationRotatesSessionAndUpgradesLegacyPasswords() throws Exception {
+        MockHttpSession session = new MockHttpSession();
+        String initialId = session.getId();
+        mockMvc.perform(post("/signup").session(session).param("fullName", "Secure Student")
+                        .param("email", "secure@example.com").param("phone", "5555555555").param("password", "secret123"))
+                .andExpect(status().is3xxRedirection());
+        assertThat(session.getId()).isNotEqualTo(initialId);
+        var user = users.findByEmailIgnoreCase("secure@example.com").orElseThrow();
+        assertThat(user.getPasswordHash()).startsWith("{bcrypt}$2a$12$");
+        assertThat(authService.hash("secret123")).isNotEqualTo(authService.hash("secret123"));
+        user.setPasswordHash(java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest("studentbites:secret123".getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+        users.save(user);
+        assertThat(authService.login("secure@example.com", "wrong")).isEmpty();
+        assertThat(users.findByEmailIgnoreCase("secure@example.com").orElseThrow().getPasswordHash()).doesNotStartWith("{bcrypt}");
+        MockHttpSession loginSession = new MockHttpSession();
+        String beforeLogin = loginSession.getId();
+        mockMvc.perform(post("/login").session(loginSession).param("email", "secure@example.com").param("password", "secret123"))
+                .andExpect(status().is3xxRedirection());
+        assertThat(loginSession.getId()).isNotEqualTo(beforeLogin);
+        assertThat(users.findByEmailIgnoreCase("secure@example.com").orElseThrow().getPasswordHash()).startsWith("{bcrypt}");
+        assertThat(authService.login("secure@example.com", "secret123")).isPresent();
+        assertThat(authService.login("secure@example.com", "wrong")).isEmpty();
+        mockMvc.perform(post("/logout").session(loginSession)).andExpect(redirectedUrl("/"));
+        assertThat(loginSession.isInvalid()).isTrue();
+    }
+
     @Test
     void cartCanAddItemAndOpenCart() throws Exception {
         MockHttpSession session = new MockHttpSession();
@@ -58,6 +164,44 @@ class StudentBitesFlowTests {
 
         mockMvc.perform(get("/cart").session(session))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void pbkdf2AccountsUpgradeOnlyAfterCorrectLogin() {
+        var form = new com.studentbites.dto.SignupForm();
+        form.setFullName("Migration Student");
+        form.setEmail("pbkdf2@example.com");
+        form.setPhone("5555555555");
+        form.setPassword("secret123");
+        var user = authService.signup(form);
+        String legacy = "{pbkdf2}" + org.springframework.security.crypto.password.Pbkdf2PasswordEncoder
+                .defaultsForSpringSecurity_v5_8().encode("secret123");
+        user.setPasswordHash(legacy);
+        users.save(user);
+        assertThat(authService.login(user.getEmail(), "wrong")).isEmpty();
+        assertThat(users.findByEmailIgnoreCase(user.getEmail()).orElseThrow().getPasswordHash()).isEqualTo(legacy);
+        assertThat(authService.login(user.getEmail(), "secret123")).isPresent();
+        String upgraded = users.findByEmailIgnoreCase(user.getEmail()).orElseThrow().getPasswordHash();
+        assertThat(upgraded).startsWith("{bcrypt}");
+        assertThat(new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder()
+                .matches("secret123", upgraded.substring(8))).isTrue();
+        assertThat(authService.login(user.getEmail(), "secret123")).isPresent();
+    }
+
+    @Test
+    void bcryptRejectsPasswordsBeyondItsByteLimit() throws Exception {
+        String boundary = "a".repeat(72);
+        String encoded = authService.hash(boundary);
+        assertThat(new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder()
+                .matches(boundary, encoded.substring(8))).isTrue();
+        for (String password : new String[]{"a".repeat(73), "\u00e9".repeat(37)}) {
+            mockMvc.perform(post("/signup").param("fullName", "Long Password")
+                            .param("email", "long@example.com").param("phone", "5555555555")
+                            .param("password", password))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string(org.hamcrest.Matchers.containsString("Password must be at most 72 UTF-8 bytes")));
+        }
+        assertThat(users.findByEmailIgnoreCase("long@example.com")).isEmpty();
     }
 
     @Test

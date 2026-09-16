@@ -7,6 +7,8 @@ import com.studentbites.model.OrderStatus;
 import com.studentbites.model.StudentOrder;
 import com.studentbites.repository.StudentOrderRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -23,6 +25,11 @@ public class OrderService {
     }
 
     public StudentOrder placeOrder(CheckoutForm form, List<CartItem> cartItems) {
+        if (cartItems.isEmpty() || cartItems.stream().anyMatch(item ->
+                item.getQuantity() < 1 || item.getQuantity() > CartService.MAX_QUANTITY
+                        || item.getLineTotal().signum() <= 0)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid cart quantities");
+        }
         StudentOrder order = new StudentOrder();
         order.setStudentName(form.getStudentName());
         order.setEmail(form.getEmail());
@@ -46,8 +53,13 @@ public class OrderService {
         return orders.save(order);
     }
 
-    public Optional<StudentOrder> findByIdWithLiveStatus(Long id) {
-        return orders.findById(id).map(this::refreshStatus);
+    public Optional<StudentOrder> findByIdWithLiveStatus(Long id, String ownerEmail) {
+        if (ownerEmail == null || ownerEmail.isBlank()) {
+            return Optional.empty();
+        }
+        return orders.findById(id)
+                .filter(order -> ownerEmail.equalsIgnoreCase(order.getEmail()))
+                .map(this::refreshStatus);
     }
 
     public List<StudentOrder> latestForStudent(String email) {

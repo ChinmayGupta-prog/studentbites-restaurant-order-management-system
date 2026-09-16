@@ -25,7 +25,7 @@ StudentBites is a server-rendered restaurant ordering application aimed at campu
 - Login-required checkout with account details applied on the server before order creation.
 - Persisted orders and order lines with totals calculated from current menu prices.
 - Pickup, dine-in, or hostel-delivery choices and simulated payment references.
-- Printable invoice pages and order lookup by invoice/order ID.
+- Printable invoice pages and order lookup restricted to the signed-in order owner.
 - Account-specific display of the latest eight orders.
 - Automatic status progression from Pending to Preparing, Ready, and Delivered.
 - Seed data for menu items and homepage reviews.
@@ -93,6 +93,8 @@ The invoice and tracking pages refresh periodically until delivery.
 - Signup also requires a name and phone number; email uniqueness is checked in application logic and enforced by a database constraint.
 - Checkout requires a student name and phone and validates the email format when supplied.
 - `FoodItem` requires a nonblank name and a positive, non-null price.
+- Cart quantities are limited to 99 per item; zero removes an item. Negative quantities, overflow attempts, and unknown item IDs are rejected.
+- Checkout accepts only the order and payment modes displayed in its dropdowns.
 - `AppUser` and `StudentOrder` also carry entity-level Bean Validation constraints.
 
 ## Setup and running
@@ -143,7 +145,7 @@ mvn spring-boot:run "-Dspring-boot.run.profiles=demo"
 mvn test
 ```
 
-The integration suite uses an in-memory H2 database and currently covers seven flows: cart addition/display, homepage rendering, guest checkout rejection, unique signup and login, account-linked checkout/tracking, time-based status progression, and guest/user cart separation.
+The integration suite uses an in-memory H2 database and covers normal ordering flows plus invoice ownership, guest tracking rejection, quantity boundaries, invalid checkout modes, session rotation/logout, and password hash migration.
 
 ## Design decisions
 
@@ -172,8 +174,8 @@ The H2 profile makes the project runnable without infrastructure and uses MySQL 
 ## Current limitations
 
 - Authentication is custom session logic rather than Spring Security.
-- Passwords use a salted-prefix SHA-256 digest, not an adaptive password hash such as BCrypt or Argon2.
-- There are no roles, admin dashboard, kitchen workflow, or authorization checks around invoice/order-ID lookup.
+- New passwords use Spring Security Crypto's BCrypt encoder with a random salt and cost factor 12. Existing SHA-256 and PBKDF2 hashes upgrade after successful login. Passwords are limited to 72 UTF-8 bytes for BCrypt; longer legacy passwords remain usable with their existing hash to avoid truncation. Login/signup rotate the session ID, and logout invalidates the session and its carts.
+- There are no roles, admin dashboard, or kitchen workflow. Invoice and order-ID lookup require the owning account.
 - Payment is simulated; no payment gateway or transaction verification exists.
 - Order status is elapsed-time simulation, not real operational state.
 - Carts are session-local and are not persisted or shared across devices.
